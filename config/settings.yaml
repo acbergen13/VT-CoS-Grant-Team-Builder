@@ -1,0 +1,109 @@
+# Central configuration for the grant team builder.
+# The LLM must never read or modify anything in this file (req 12): scoring
+# weights, role rules, and PI eligibility are deterministic and enforced in
+# code, not by the model.
+
+scoring:
+  # Deterministic faculty ranking (req 12). Weights must sum to 1.0.
+  weights:
+    semantic: 0.6
+    h5: 0.25
+    citations: 0.15
+  # H5 is bounded (1-26) — plain min-max. Citations are extremely
+  # right-skewed (max ~49.6k vs median 526): log1p first, then min-max (D3).
+  h5_normalization: minmax
+  citations_normalization: log1p_minmax
+  # Missing H5 (15% of roster) / H-Index impute to 0 (flag D2). The LLM never
+  # sees or fills these numbers.
+  missing_metric_impute: 0
+
+team:
+  # Fixed role list (req 13) — order is meaningful (fill priority).
+  roles:
+    - Principal Investigator
+    - Co-PI
+    - Methods/Technical Lead
+    - Domain Expert
+    - Data/Computational Specialist
+    - Project Coordinator
+  min_pi: 1
+  min_additional_roles: 1
+  one_role_per_person: true
+  team_size: 5
+  # Deterministic team structure (decision 9, plan.md): every team is built
+  # for exactly these roles, in fill order (PI first — scarce pool fills
+  # first). The LLM writes each role's solicitation-specific focus
+  # (mitigation 8); it never chooses WHICH roles — that discrete choice
+  # showed sampling variance across regenerations (measured Oct 21:
+  # Domain Expert <-> Project Coordinator for the same solicitation).
+  # Subset of the fixed list above; the remaining roles stay available for
+  # future revision-turn "add" support.
+  base_roles:
+    - Principal Investigator
+    - Methods/Technical Lead
+    - Domain Expert
+    - Data/Computational Specialist
+  # Deterministic PI eligibility (flag D8): professorial ranks only.
+  # Postdocs (92 on roster), instructors/lecturers, research associates and
+  # scientists, visiting ranks, and professors of practice are excluded.
+  # Cross-checked against the Tenure column: tenured / tenure-pending ranks
+  # are covered; collegiate and research professorial tracks are included as
+  # professorial faculty. Tunable here, never by the LLM.
+  pi_eligible_ranks:
+    - Professor
+    - Associate Professor
+    - Assistant Professor
+    - Collegiate Professor
+    - Collegiate Associate Professor
+    - Collegiate Assistant Professor
+    - Research Professor
+    - Research Associate Professor
+    - Research Assistant Professor
+    - Administrative Professor
+    - Administrative Associate Prof
+
+grants:
+  # req 22: open statuses only. Closed/archived solicitations are archived
+  # locally and never shown.
+  opp_statuses: "forecasted|posted"
+  request_timeout_seconds: 20
+  max_retries: 3
+
+retrieval:
+  # Local embeddings so the app runs without extra endpoint setup (flag D10).
+  # bge-small-en-v1.5: 512-token context (median abstract is 156 words, so
+  # 256-token models would truncate ~25%), 384-dim, ~130MB one-time HF
+  # download on first index build. ARC's Qwen3-Embedding-4B is the fallback.
+  embedding_model: BAAI/bge-small-en-v1.5
+  exclude_doc_types: [Erratum, Editorial, Note, Letter]
+  candidate_k: 100      # publication chunks kept after hybrid recall
+  author_pool_k: 25     # authors entering MMR selection
+  select_k: 10          # authors returned to the team builder (after MMR)
+  evidence_per_author: 3  # publication chunks attached as grounding evidence
+  mmr_lambda: 0.7
+
+llm:
+  # Low temperature for reproducibility (req 19); same prompt -> same team.
+  temperature: 0.1
+  # Chain-of-verification regeneration cap before rejecting a claim.
+  verify_max_retries: 2
+  # vLLM honors per-request seeds: temp 0.1 + fixed seed -> deterministic
+  # sampling (req 19). Never set by the LLM.
+  seed: 42
+  timeout_seconds: 120
+  # Thinking models (GLM-5.3) spend completion tokens on hidden reasoning
+  # BEFORE the visible answer — budget must cover both or content comes back
+  # empty with finish_reason=length (verified against the live endpoint).
+  # Batched rationale calls need room for reasoning + 5 rationales.
+  max_output_tokens: 3072
+  # Per-solicitation disk cache of the LLM build plan (optimized query +
+  # role decomposition) and finished builds: pins run-to-run reproducibility
+  # (req 19) and avoids repeat LLM calls on re-builds (req 21). Keyed by
+  # opportunity id + model + solicitation content hash.
+  build_cache: true
+  # Req 21 context discipline: bounded prompt pieces + bounded optimized
+  # query length (also caps prompt drift, mitigation 4).
+  max_input_chars: 6000
+  query_max_chars: 400
+
+data_source: csv        # csv | elsevier (Stage 6)
