@@ -59,8 +59,9 @@ existing team, and cached builds return with zero LLM calls.
 - All source (`main.py`, `app/`, `gt/`, `scripts/`, `tests/`, `config/`,
   `.streamlit/`), this README, `.env.example`, and the design docs.
 - `data/authors.csv`, `data/publications.csv`, the harvested
-  `data/grants/active.json`, and a pre-warmed `data/llm_cache/` entry for the
-  demo solicitation (`363268`, NSF AI Datasets).
+  `data/grants/active.json`, and pre-warmed `data/llm_cache/` entries
+  (including the demo solicitation `363268`, NSF AI Datasets).
+- The recorded end-to-end run-through, `vt_cos_team_builder_demo.mp4`.
 - **No `.env`** (keys are never submitted) and no `data/chroma/`: the index is
   rebuilt automatically from the shipped corpus on the first team build (or
   deliberately with `python scripts/build_index.py`). This keeps the zip small;

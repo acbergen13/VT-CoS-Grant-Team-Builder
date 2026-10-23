@@ -15,9 +15,9 @@ with an EID/author disk cache, bounded abstract fallback, corpus-hash index
 invalidation, and source-aware LLM cache keys. Stage 7 hardened verification,
 added browser error-path tests, passed the final two-tier reproducibility
 gate, and built/validated the submission zip. `data_source: csv` remains the
-submitted default. The only manual deliverable left is the OBS screen
-recording.** Implementation notes and the Stage 4–7 evidence are in "Session
-handoff" below.
+submitted default. The OBS screen recording is complete and the submission zip
+has been repackaged with it.** Implementation notes and the Stage 4–7 evidence
+are in "Session handoff" below.
 
 ## Locked decisions (Oct 20)
 
@@ -491,16 +491,13 @@ Implementation map:
   `test_build_shows_optimized_prompt`. Suite: **143 tests green** in ~4s.
 - **Submission zip:** `submission/vt_cos_team_builder.zip` contains source,
   README, `.env.example`, docs, tests, `data/authors.csv`,
-  `data/publications.csv`, `data/grants/active.json`, and the pre-warmed
-  `data/llm_cache/` entry for opp 363268. It excludes `.env`, `.git`,
-  `__pycache__`, and the 387 MB `data/chroma/` (auto-rebuilds on first build).
-  A clean unzip dry run passed the test suite and booted the app headless
-  without keys (browser view).
-- **Manual remaining step:** record the OBS run-through (refresh + filter →
-  build team on opp 363268 → follow-up revision). Recommended example
-  follow-up: "Replace the PI with a full professor whose evidence covers data
-  governance." The cache makes the initial build return instantly with 0 LLM
-  calls; the revision makes 2.
+  `data/publications.csv`, the current `data/grants/active.json`, all
+  pre-warmed `data/llm_cache/` entries (including opp 363268), and the recorded
+  run-through as `vt_cos_team_builder_demo.mp4`. It excludes `.env`, `.git`,
+  `.pytest_cache`, `.vscode`, `__pycache__`, and the 387 MB `data/chroma/`
+  (auto-rebuilds on first build). A clean unzip passed all 143 tests.
+- **OBS run-through:** recorded (refresh/filter → team build → follow-up
+  revision) and packaged with the source zip; no manual deliverables remain.
 - **Elsevier full-corpus gate:** not run end to end in this session — it needs
   campus-network entitlement and hundreds of paginated searches. The
   one-author live smoke test passed, the EID/author cache and source
@@ -509,11 +506,9 @@ Implementation map:
 
 **Open items / gotchas:**
 
-- **OBS video** is the only unfinished deliverable. Use opp `363268`
-  (cross-department: Biological Sciences, Statistics, Geosciences, Biological
-  Systems Engineering) and show refresh/filter → select → Build a team →
-  follow-up revision. The shipped `data/llm_cache/` entry makes the first
-  build a 0-call cache hit; the revision makes 2 calls.
+- **Submission package is complete:** the source zip and recorded video are
+  ready for Canvas. The shipped `data/llm_cache/` entries include the demo
+  solicitations, so cached builds still return with 0 LLM calls.
 - `data/` is gitignored (data ships only in the zip), so docs/source are the
   tracked changes; the zip itself lives under `submission/` and is not
   committed.
