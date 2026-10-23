@@ -155,13 +155,27 @@ def _maybe_build_first_team(solicitation: Solicitation) -> None:
         return
     st.session_state.chat_build_attempted = True
     st.session_state.chat_error = ""
-    with st.spinner(_BUILD_SPINNER):
+    with st.status("Building a team...", expanded=True) as status:
+        status.write(_BUILD_SPINNER)
+
+        def show_optimized(optimized) -> None:
+            status.markdown("**Optimized retrieval prompt**")
+            status.code(optimized.query, language=None)
+            if optimized.domains:
+                status.caption("Domains: " + ", ".join(optimized.domains))
+            if optimized.methodology:
+                status.caption("Methods: " + ", ".join(optimized.methodology))
+
         try:
             builder, _ = _get_builder()
-            result = builder.build(solicitation)
+            result = builder.build(solicitation, on_optimized=show_optimized)
         except Exception as exc:  # req 23: never leak a traceback to the user
+            status.update(label="Team build failed", state="error")
             _record_error(exc, "Build")
             return
+        status.update(
+            label="Team build complete", state="complete", expanded=False
+        )
     _record_build_result(result, action="build")
 
 

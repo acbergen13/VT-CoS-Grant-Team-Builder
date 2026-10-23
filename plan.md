@@ -316,7 +316,7 @@ Local artifacts (gitignored under `data/`): `data/grants/active.json`,
 | **4. LLM layer** | Tue PM–Wed AM | arc.py, prompts.py, optimize.py, team_builder.py (canonical query → deterministic role focuses → greedy fill, JSON output), team.py (critique→slot ops w/ scope guard), verify.py (reject/regenerate), cache.py | live gate: role structure identical across regens, people overlap ≥ n−2; cached rerun bit-identical + 0 calls; revise keeps untouched members and replaces PI; 114 tests green | 9,13,14,15,17,18,19,21,27 / 350 | **done Oct 21** — 114 tests at Stage 4 (119 now); see "Session handoff" below for evidence |
 | **5. UI** | Wed | browser.py (refresh+spinner, filters, select→detail, build-a-team), session-state handoff, chat.py (auto-build, messages, error surfaces, follow-ups, team cards w/ EID/Link/source traceability) | launch→team in ≤5 interactions; handoff loses nothing; network kill → clean error | 1,8,24 / 100 | **done Oct 21** — AppTest covers auto-build, revision, reuse of the same solicitation, and LLM-down error; 119 tests green; live build rendered team cards with evidence links/verbatim text |
 | **6. Prod source + README** | Wed PM–Thu | elsevier.py behind FacultySource (Scopus search + Abstract Retrieval, EID-keyed disk cache), config switch, README design section | offline fake-transport tests pass; cache hit = 0 API calls; corpus hash forces rebuild; factory switch works; on-campus live gate still pending | 25,26,20 | **done Oct 22** — 136 tests green; on-campus live verification remains in Stage 7 |
-| **7. Harden & submit** | Thu PM–Fri | reproducibility runs, error paths, zip (with data/), OBS video | two-tier reproducibility pass (decision 10); instructor-follows-README dry run | 19 / submission | **done Oct 22** — 141 tests; two-tier gate passed on opp 363268 (fresh 3/4 overlap ≥ n−2, cached 0 calls + bit-identical); verify_team rejects injected fake authors/publications; browser refresh/detail errors covered; zip built without `.env`/chroma and dry-run from a clean unzip. OBS recording remains manual. |
+| **7. Harden & submit** | Thu PM–Fri | reproducibility runs, error paths, zip (with data/), OBS video | two-tier reproducibility pass (decision 10); instructor-follows-README dry run | 19 / submission | **done Oct 22** — 143 tests; two-tier gate passed on opp 363268 (fresh 3/4 overlap ≥ n−2, cached 0 calls + bit-identical); verify_team rejects injected fake authors/publications; browser refresh/detail errors covered; zip built without `.env`/chroma and dry-run from a clean unzip. OBS recording remains manual. |
 
 ## Session handoff (Oct 21–22) — resume here
 
@@ -484,7 +484,11 @@ Implementation map:
 - **Error paths:** `tests/test_browser.py` (AppTest) covers a failed refresh,
   a failed detail fetch, and the empty-store prompt; `tests/test_chat.py`
   already covered LLM-down and Elsevier config/quota/network/response errors.
-  Suite: **141 tests green** in ~4s.
+- **Live build status:** `app/chat.py` now uses an expandable `st.status` and
+  `TeamBuilder.build(..., on_optimized=...)` notifies it immediately after the
+  keyword-extraction call, so the assembled optimized retrieval prompt is
+  visible during the remaining retrieval/rationale work. Covered by
+  `test_build_shows_optimized_prompt`. Suite: **143 tests green** in ~4s.
 - **Submission zip:** `submission/vt_cos_team_builder.zip` contains source,
   README, `.env.example`, docs, tests, `data/authors.csv`,
   `data/publications.csv`, `data/grants/active.json`, and the pre-warmed

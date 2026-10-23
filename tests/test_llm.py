@@ -386,6 +386,13 @@ def test_verify_team_rejects_unmatched_publication_and_empty_rationale():
 # ------------------------------------------------------------ team builder
 
 
+def test_build_notifies_optimized_query():
+    seen = []
+    builder, _ = make_builder([OPT_JSON, DECOMP_JSON, RATIONALE_JSON])
+    builder.build(SOL, on_optimized=seen.append)
+    assert seen and seen[0].query == CANONICAL
+
+
 def test_build_happy_path():
     builder, client = make_builder([OPT_JSON, DECOMP_JSON, RATIONALE_JSON])
     result = builder.build(SOL)
@@ -578,10 +585,12 @@ def test_cached_build_skips_llm_entirely(tmp_path):
     assert first.llm_calls == 3 and not first.cached
 
     builder2, client2 = make_builder([], settings, cache=cache)  # no replies
-    second = builder2.build(SOL)
+    seen = []
+    second = builder2.build(SOL, on_optimized=seen.append)
     assert second.cached
     assert client2.calls == 0  # zero LLM calls on the cache hit
     assert second.team == first.team  # bit-identical (req 19)
+    assert seen and seen[0].query == CANONICAL  # status still gets the prompt
 
 
 def test_fallback_builds_are_not_cached(tmp_path):

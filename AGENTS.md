@@ -5,7 +5,7 @@ VT ADS 5984 mid-term: Streamlit app that harvests open grants.gov solicitations
 and builds explainable VT College of Science faculty teams via a RAG chatbot.
 **Current state (Oct 22):** Stages 0–7 are done — scaffold, grants, faculty,
 retrieval, LLM team-builder, chat UI, Elsevier production source, and
-submission hardening (141 tests green). `app/chat.py` auto-builds on handoff,
+submission hardening (143 tests green). `app/chat.py` auto-builds on handoff,
 renders traceable team cards, and handles revision turns. Elsevier runs behind
 the same `FacultySource` seam with an EID-keyed cache; **CSV remains the default
 run mode** so the submitted app works off-campus without an Elsevier key. The
@@ -135,7 +135,7 @@ Python, Streamlit, ChromaDB, VT ARC LLM (OpenAI-compatible client).
 
 ## Conventions
 - Tests: `conda run -n ads_5984 python -m pytest -q` from the repo root
-  (141 pass, ~4s). Single test: append `tests/test_llm.py -k <name>`.
+  (143 pass, ~4s). Single test: append `tests/test_llm.py -k <name>`.
   Tests are offline (fake clients/transports, tmp dirs; no live API/LLM
   calls). `tests/test_chat.py` and `tests/test_browser.py` drive the
   Streamlit views through `AppTest`. No lint/typecheck config — record

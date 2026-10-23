@@ -27,7 +27,7 @@ Mid-term project for VT ADS 5984. Binding requirements and architecture:
 > production publication source (behind the same `FacultySource` seam, with an
 > EID-keyed disk cache), and submission hardening. **CSV remains the default
 > run mode**, so the submitted app runs without an Elsevier key. The suite is
-> `141` offline tests; the final two-tier reproducibility gate passed on the
+> `143` offline tests; the final two-tier reproducibility gate passed on the
 > shipped corpus (cached rerun bit-identical with **0 LLM calls**).
 
 ## Quick start
@@ -197,7 +197,9 @@ scores, and evidence.
 The browser passes one structured `Solicitation` object to the chat view via
 Streamlit session state (`gt/state.py`), so detail data is never re-fetched or
 re-entered (req 24). Entering chat auto-builds the first proposal; every API /
-LLM operation runs under a visible spinner (req 1).
+LLM operation runs under a visible status/spinner (req 1). As soon as the
+keyword-extraction call returns, the live build status shows the assembled
+**optimized retrieval prompt** while the rest of the build continues.
 
 The LLM does not choose membership, roles, scores, or ordering. A build is a
 fixed three-call workflow in `gt/llm/team_builder.py`:

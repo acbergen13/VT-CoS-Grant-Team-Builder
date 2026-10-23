@@ -34,6 +34,7 @@ focuses, and grounded rationales (27) — under verification (18).
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from typing import Callable
 
 from gt.config import load_settings
 from gt.llm.arc import ArcClient
@@ -107,7 +108,12 @@ class TeamBuilder:
 
     # ------------------------------------------------------------------ build
 
-    def build(self, solicitation: Solicitation, extra_instructions: str = "") -> BuildResult:
+    def build(
+        self,
+        solicitation: Solicitation,
+        extra_instructions: str = "",
+        on_optimized: Callable[[OptimizedQuery], None] | None = None,
+    ) -> BuildResult:
         cache_key = build_cache_key(
             solicitation.opp_id,
             self._client.model,
@@ -119,12 +125,17 @@ class TeamBuilder:
         if self._cache_enabled:
             hit = self._cache.get(cache_key)
             if hit is not None:
-                return self._result_from_cache(hit)
+                cached_result = self._result_from_cache(hit)
+                if cached_result.optimized is not None:
+                    self._notify_optimized(cached_result.optimized, on_optimized)
+                return cached_result
 
         calls_before = self._client.calls
         notes: list[str] = []
 
-        plan, plan_was_cached = self._load_plan(solicitation, extra_instructions)
+        plan, plan_was_cached = self._load_plan(
+            solicitation, extra_instructions, on_optimized
+        )
         optimized = OptimizedQuery(
             query=plan["query"],
             domains=plan.get("domains", []),
@@ -281,8 +292,31 @@ class TeamBuilder:
 
     # ------------------------------------------------------------- build plan
 
+    @staticmethod
+    def _notify_optimized(
+        optimized: OptimizedQuery | dict,
+        callback: Callable[[OptimizedQuery], None] | None,
+    ) -> None:
+        if callback is None:
+            return
+        if isinstance(optimized, dict):
+            optimized = OptimizedQuery(
+                query=optimized.get("query", ""),
+                domains=optimized.get("domains", []),
+                methodology=optimized.get("methodology", []),
+                source=optimized.get("source", "llm"),
+                note=optimized.get("note", ""),
+            )
+        try:
+            callback(optimized)
+        except Exception:
+            pass
+
     def _load_plan(
-        self, solicitation: Solicitation, extra_instructions: str
+        self,
+        solicitation: Solicitation,
+        extra_instructions: str,
+        on_optimized: Callable[[OptimizedQuery], None] | None = None,
     ) -> tuple[dict, bool]:
         """Optimized query + role decomposition, cached per solicitation
         (reqs 19/21): the plan shapes the candidate pool, so pinning it pins
@@ -301,9 +335,11 @@ class TeamBuilder:
         if self._cache_enabled:
             hit = self._cache.get(key)
             if hit is not None:
+                self._notify_optimized(hit, on_optimized)
                 return hit, True
 
         optimized = optimize_query(self._client, solicitation, self._settings)
+        self._notify_optimized(optimized, on_optimized)
         roles = self._decompose_roles(solicitation, optimized, extra_instructions)
         plan = {
             "query": optimized.query,

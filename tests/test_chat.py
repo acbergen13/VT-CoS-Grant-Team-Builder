@@ -99,10 +99,12 @@ class FakeBuilder:
         self.build_calls = 0
         self.revise_calls = 0
 
-    def build(self, solicitation):
+    def build(self, solicitation, on_optimized=None):
         self.build_calls += 1
         if self.error:
             raise self.error
+        if on_optimized is not None and self.build_result.optimized is not None:
+            on_optimized(self.build_result.optimized)
         return self.build_result
 
     def revise(self, team, solicitation, critique):
@@ -146,6 +148,15 @@ def test_auto_builds_and_renders_traceable_team(monkeypatch):
     assert any(e.label.startswith("Supporting publications") for e in at.expander)
     assert any("E1" in m.value for m in at.caption)
     assert any("Build complete" in m.value for m in at.markdown)
+
+
+def test_build_shows_optimized_prompt(monkeypatch):
+    at = run_chat(monkeypatch, solicitation(), FakeBuilder())
+
+    assert not at.exception
+    assert any("Optimized retrieval prompt" in m.value for m in at.markdown)
+    assert any("team formation methods" in c.value for c in at.code)
+    assert any(s.label == "Team build complete" for s in at.status)
 
 
 def test_revision_turn_updates_team(monkeypatch):
