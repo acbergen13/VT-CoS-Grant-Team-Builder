@@ -57,9 +57,19 @@ def test_factory_returns_csv_source_for_csv_mode():
     assert isinstance(source, CsvFacultySource)
 
 
-def test_factory_fails_loudly_for_elsevier_until_stage6():
-    with pytest.raises(NotImplementedError, match="Stage 6"):
-        get_faculty_source({"data_source": "elsevier"})
+def test_factory_returns_elsevier_source(monkeypatch, tmp_path):
+    monkeypatch.setenv("ELSEVIER_API_KEY", "test-key")
+    monkeypatch.setenv("ELSEVIER_BASE_URL", "https://api.elsevier.test")
+    from gt.faculty.elsevier import ElsevierFacultySource
+
+    source = get_faculty_source(
+        {
+            **csv_settings(),
+            "data_source": "elsevier",
+            "elsevier": {"cache_dir": str(tmp_path / "cache")},
+        }
+    )
+    assert isinstance(source, ElsevierFacultySource)
 
 
 def test_factory_rejects_unknown_mode():

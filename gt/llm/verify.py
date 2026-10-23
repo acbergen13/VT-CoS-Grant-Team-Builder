@@ -94,9 +94,20 @@ def verify_team(
         reasons.append("team needs at least one additional role")
 
     for m in team.members:
-        offered = {e.eid for e in evidence_by_id.get(m.scopus_id, [])}
+        pack = evidence_by_id.get(m.scopus_id)
+        if not pack:
+            # Ground truth is the retrieved evidence pool: a member with no
+            # pack was never offered as a candidate (e.g. an injected fake
+            # author from a bad LLM reply or a corrupted cache entry).
+            reasons.append(f"{m.name}: not in the verified candidate pool")
+            continue
+        offered = {e.eid for e in pack}
         unmatched = [e for e in m.evidence_eids if e not in offered]
         if unmatched:
             reasons.append(f"{m.name}: unmatched evidence EIDs {unmatched}")
+        if not m.evidence_eids:
+            reasons.append(f"{m.name}: no supporting publication evidence")
+        if not (m.rationale or "").strip():
+            reasons.append(f"{m.name}: empty rationale")
 
     return FillCheck(ok=not reasons, reasons=reasons)

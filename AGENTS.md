@@ -3,12 +3,15 @@
 ## Project
 VT ADS 5984 mid-term: Streamlit app that harvests open grants.gov solicitations
 and builds explainable VT College of Science faculty teams via a RAG chatbot.
-**Current state (Oct 21):** Stages 0–5 are done — scaffold, grants, faculty,
-retrieval, LLM team-builder, and the chat UI (119 tests green). `app/chat.py`
-auto-builds on handoff, renders traceable team cards, and handles revision
-turns; Stage 6 (Elsevier production source) is next. Elsevier production mode
-is still unimplemented, so keep `data_source: csv`. Tech stack: Python,
-Streamlit, ChromaDB, VT ARC LLM (OpenAI-compatible client).
+**Current state (Oct 22):** Stages 0–7 are done — scaffold, grants, faculty,
+retrieval, LLM team-builder, chat UI, Elsevier production source, and
+submission hardening (141 tests green). `app/chat.py` auto-builds on handoff,
+renders traceable team cards, and handles revision turns. Elsevier runs behind
+the same `FacultySource` seam with an EID-keyed cache; **CSV remains the default
+run mode** so the submitted app works off-campus without an Elsevier key. The
+two-tier reproducibility gate passed on the shipped corpus; `submission/` holds
+the zip. The only manual deliverable left is the OBS video. Tech stack:
+Python, Streamlit, ChromaDB, VT ARC LLM (OpenAI-compatible client).
 
 ## Read first (source of truth)
 - `docs/architecture/mid_term_project_reqs.qmd` — the 27 numbered requirements
@@ -17,9 +20,9 @@ Streamlit, ChromaDB, VT ARC LLM (OpenAI-compatible client).
   it is graded AI-free coursework, already submitted.
 - `docs/specifications/specification.qmd` — original spec: use cases, 1000-pt
   rubric, API links, submission format.
-- `plan.md` — staged build plan, data profile, decision record (Oct 20–21).
+- `plan.md` — staged build plan, data profile, decision record (Oct 20–22).
   Update stage statuses there as work progresses; the "Session handoff"
-  section has the Stage 4/5 evidence and next steps.
+  section has the Stage 4–7 evidence and next steps.
 - Render `.qmd` docs to PDF with `quarto render <file>.qmd`.
 
 ## Environment
@@ -50,18 +53,28 @@ Streamlit, ChromaDB, VT ARC LLM (OpenAI-compatible client).
   `max_output_tokens` on hidden reasoning and return empty content with
   `finish_reason=length` — raise the budget or use `gpt-oss-120b`. All
   keys/base URLs in `.env`, never hardcoded, never committed:
-  `VT_ARC_API_KEY`, `VT_ARC_BASE_URL`, `VT_ARC_MODEL`. Elsevier API key
-  (production mode) also lives in `.env`; entitled content requires campus
-  network.
+  `VT_ARC_API_KEY`, `VT_ARC_BASE_URL`, `VT_ARC_MODEL`. Elsevier production
+  mode also requires `ELSEVIER_API_KEY` and `ELSEVIER_BASE_URL` in `.env`
+  (`ELSEVIER_INST_TOKEN` optional); entitled content requires campus network.
+- Elsevier production source: `gt/faculty/elsevier.py` behind the same
+  `FacultySource` seam (`gt/faculty/source.py` factory). Scopus Search uses
+  `AU-ID(<id>)`, `view=COMPLETE`, 0-based pagination; `data/elsevier_cache/`
+  has EID records + per-author EID lists, so repeat loads make **0 API
+  calls**. Abstract Retrieval is only a bounded fallback for missing
+  abstracts. Keep `data_source: csv` as the shipped default. Switching to
+  Elsevier must force an index rebuild via the corpus content hash
+  (`gt/retrieval/index.py:corpus_fingerprint`) and a new LLM cache key via the
+  source/corpus fingerprint (`CACHE_FORMAT = "v4"`).
 - LLM team builds are a fixed workflow, not agent-decided: **3 calls per
   build** (keyword extraction, per-role focuses, batched rationales); a revise
   turn is 2. Membership is greedy assignment in code; roles are the fixed
   `team.base_roles`; the retrieval query is code-assembled by
   `gt/llm/optimize.py:canonical_query` (anchor + sorted LLM keywords); the
   critique scope guard is in `gt/llm/team.py`. The disk cache
-  (`data/llm_cache/`, `CACHE_FORMAT = "v3"`) pins the plan + finished build;
-  a cache hit is bit-identical with **0 LLM calls**. Degraded fallback output
-  is never cached; bump `CACHE_FORMAT` when changing cached shapes.
+  (`data/llm_cache/`, `CACHE_FORMAT = "v4"`) pins the plan + finished build
+  and keys on data source + corpus content hash; a cache hit is bit-identical
+  with **0 LLM calls**. Degraded fallback output is never cached; bump
+  `CACHE_FORMAT` when changing cached shapes.
 - Reproducibility is graded, with a two-tier contract (`plan.md` decision 10):
   cache hit → bit-identical team + 0 LLM calls; cache-cleared regeneration →
   same role structure and people overlap ≥ n−2 (endpoint keyword drift is
@@ -95,31 +108,38 @@ Streamlit, ChromaDB, VT ARC LLM (OpenAI-compatible client).
   via `Author(s) ID` (semicolon-separated Scopus IDs). With dtype=str pandas,
   empty cells are float NaN — use the `_clean_str` helpers, since `NaN or ""`
   yields the literal string "nan".
-- Dev reads these CSVs; production must use the Elsevier API behind the same
-  retrieval interface (`gt/faculty/source.py`), with local caching to limit
-  repeat calls. `ElsevierFacultySource` is still a `NotImplementedError`
-  placeholder — keep `data_source: csv` in `config/settings.yaml` until
-  Stage 6.
+- Dev reads these CSVs; production uses the Elsevier API behind the same
+  retrieval interface (`gt/faculty/source.py` -> `gt/faculty/elsevier.py`),
+  with local caching to limit repeat calls. Keep `data_source: csv` in the
+  committed `config/settings.yaml` for the submitted app; switch to
+  `elsevier` only for an on-campus production run.
 - `data/*.csv` stay out of git (`publications.csv` is 51MB); data ships only in
-  the submission zip. `data/chroma/` and `data/llm_cache/` are local
-  artifacts (also gitignored); the cache is content-keyed and safe to ship.
+  the submission zip. `data/chroma/`, `data/llm_cache/`, and
+  `data/elsevier_cache/` are local artifacts (also gitignored); the caches
+  are content-keyed and safe to ship.
 
 ## Submission
 - Source zip + recorded video due Fri Oct 23 (end of Week 9). The instructor
   unzips and runs the app following the README, so it must contain exact run
-  instructions + expected `.env` keys. Keep the README status current (Stages
-  0–5 done) and preserve the design justification for deterministic
-  membership, canonical query, and the two-tier reproducibility contract.
+  instructions + expected `.env` keys. The prepared zip is
+  `submission/vt_cos_team_builder.zip`: source, README, docs, tests, CSVs,
+  grants store, and a pre-warmed `data/llm_cache/` entry; it excludes `.env`,
+  `.git`, `__pycache__`, and the large `data/chroma/` (auto-rebuilds). Only the
+  OBS recording remains manual.
+- Keep the README status current (Stages 0–7 done) and preserve the design
+  justification for deterministic membership, canonical query, and the
+  two-tier reproducibility contract.
 - README must include a design section justifying the retrieval choice
   (architecture chose ChromaDB vector RAG with hybrid search + re-ranking +
   MMR author-level diversity).
 
 ## Conventions
 - Tests: `conda run -n ads_5984 python -m pytest -q` from the repo root
-  (119 pass, ~3s). Single test: append `tests/test_llm.py -k <name>`.
-  Tests are offline (fake clients, tmp dirs; no live API/LLM calls).
-  `tests/test_chat.py` drives the chat view through Streamlit `AppTest`.
-  No lint/typecheck config — record commands here if added.
+  (141 pass, ~4s). Single test: append `tests/test_llm.py -k <name>`.
+  Tests are offline (fake clients/transports, tmp dirs; no live API/LLM
+  calls). `tests/test_chat.py` and `tests/test_browser.py` drive the
+  Streamlit views through `AppTest`. No lint/typecheck config — record
+  commands here if added.
 - Harvest CLI: `python scripts/refresh_grants.py` (refreshes data/grants/).
 - Index CLI: `python scripts/build_index.py` (rebuilds data/chroma/; ~50s,
   or minutes if it must download the embedder and re-embed all chunks).

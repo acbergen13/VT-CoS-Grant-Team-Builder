@@ -21,6 +21,7 @@ chunks whose publications left the corpus are pruned.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,7 @@ from gt.faculty.publications import Publication
 CHROMA_DIR = REPO_ROOT / "data" / "chroma"
 COLLECTION_NAME = "publications"
 MANIFEST_NAME = "manifest.json"
+CORPUS_HASH_NAME = "corpus.sha256"
 UPSERT_BATCH = 512
 
 # BGE retrieval models are trained with this instruction prefixed to queries
@@ -66,6 +68,23 @@ def build_chunks(publications: list[Publication]) -> list[Chunk]:
         if text:
             chunks.append(Chunk(id=pub.eid, text=text, pub=pub))
     return chunks
+
+
+def corpus_fingerprint(chunks: list[Chunk]) -> str:
+    """Order-independent content hash of the indexed text.
+
+    The manifest's EID set alone is not enough: switching CSV -> Elsevier can
+    keep the same EIDs while changing abstracts/keywords. Hashing
+    ``(id, text)`` makes that change force a rebuild instead of silently
+    reusing stale vectors.
+    """
+    digest = hashlib.sha256()
+    for chunk in sorted(chunks, key=lambda c: c.id):
+        digest.update(chunk.id.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(chunk.text.encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 class SentenceTransformerEmbedder:
@@ -116,6 +135,7 @@ class PublicationIndex:
     def __init__(self, persist_dir: Path | str | None = None) -> None:
         self._dir = Path(persist_dir) if persist_dir else CHROMA_DIR
         self._manifest_path = self._dir / MANIFEST_NAME
+        self._corpus_hash_path = self._dir / CORPUS_HASH_NAME
         # hnsw:space=cosine — distances are 1 - cosine similarity.
         self._client = chromadb.PersistentClient(path=str(self._dir))
         self._collection = self._client.get_or_create_collection(
@@ -130,6 +150,13 @@ class PublicationIndex:
             return set()
         with open(self._manifest_path, encoding="utf-8") as f:
             return set(json.load(f))
+
+    def indexed_corpus_hash(self) -> str | None:
+        """Content hash of the built corpus (None for legacy manifests)."""
+        try:
+            return self._corpus_hash_path.read_text(encoding="utf-8").strip() or None
+        except OSError:
+            return None
 
     def build(
         self,
@@ -161,11 +188,18 @@ class PublicationIndex:
         self._dir.mkdir(parents=True, exist_ok=True)
         with open(self._manifest_path, "w", encoding="utf-8") as f:
             json.dump(sorted(new_ids), f)
+        self._corpus_hash_path.write_text(
+            corpus_fingerprint(chunks), encoding="utf-8"
+        )
         return self._collection.count()
 
     def needs_build(self, chunks: list[Chunk]) -> bool:
-        """True when the index is empty or out of sync with the corpus."""
-        return self.indexed_ids() != {c.id for c in chunks}
+        """True when the index is empty, has different ids, or the same ids
+        have different text (CSV -> Elsevier switch, edited abstracts)."""
+        return (
+            self.indexed_ids() != {c.id for c in chunks}
+            or self.indexed_corpus_hash() != corpus_fingerprint(chunks)
+        )
 
     # -- Query ---------------------------------------------------------------
 

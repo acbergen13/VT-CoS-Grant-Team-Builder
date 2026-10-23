@@ -21,11 +21,14 @@ Mid-term project for VT ADS 5984. Binding requirements and architecture:
    slots are revised, and every factual claim is verified against source text
    before it reaches you.
 
-> **Build status (Oct 21):** Stages 0–5 complete — grants.gov harvest, local
+> **Build status (Oct 22):** Stages 0–7 complete — grants.gov harvest, local
 > store, browser UI, deterministic faculty ranking, hybrid retrieval, the
-> verified LLM team-builder, and the conversational chat UI all work end to
-> end. Stage 6 (Elsevier production source) and Stage 7 (harden/submit)
-> remain — see `plan.md`.
+> verified LLM team-builder, the conversational chat UI, the Elsevier
+> production publication source (behind the same `FacultySource` seam, with an
+> EID-keyed disk cache), and submission hardening. **CSV remains the default
+> run mode**, so the submitted app runs without an Elsevier key. The suite is
+> `141` offline tests; the final two-tier reproducibility gate passed on the
+> shipped corpus (cached rerun bit-identical with **0 LLM calls**).
 
 ## Quick start
 
@@ -51,6 +54,18 @@ team**. The first build retrieves evidence and makes three LLM calls; the chat
 UI shows a spinner throughout. Re-opening the same solicitation keeps the
 existing team, and cached builds return with zero LLM calls.
 
+### What ships in the submission zip
+
+- All source (`main.py`, `app/`, `gt/`, `scripts/`, `tests/`, `config/`,
+  `.streamlit/`), this README, `.env.example`, and the design docs.
+- `data/authors.csv`, `data/publications.csv`, the harvested
+  `data/grants/active.json`, and a pre-warmed `data/llm_cache/` entry for the
+  demo solicitation (`363268`, NSF AI Datasets).
+- **No `.env`** (keys are never submitted) and no `data/chroma/`: the index is
+  rebuilt automatically from the shipped corpus on the first team build (or
+  deliberately with `python scripts/build_index.py`). This keeps the zip small;
+  the one-time embedding-model download needs internet.
+
 ## Expected `.env` keys
 
 | Key | Required | Purpose |
@@ -59,6 +74,7 @@ existing team, and cached builds return with zero LLM calls.
 | `VT_ARC_BASE_URL` | yes | `https://llm-api.arc.vt.edu/api/v1` |
 | `VT_ARC_MODEL` | yes | chat model id; `.env.example` uses `gpt-oss-120b` (thinking models may return empty content after spending the token budget on hidden reasoning) |
 | `ELSEVIER_API_KEY` | prod mode | Scopus publication data (csv mode runs without it) |
+| `ELSEVIER_BASE_URL` | prod mode | Elsevier API base URL, e.g. `https://api.elsevier.com` |
 | `ELSEVIER_INST_TOKEN` | optional | entitled Elsevier content off-campus |
 
 Keys are never hardcoded or committed; `.env` is gitignored (req 20).
@@ -70,6 +86,38 @@ Keys are never hardcoded or committed; `.env` is gitignored (req 20).
 - `data/publications.csv` — ~21.5k publications (51 MB). Links to authors via
   `Author(s) ID` (semicolon-separated Scopus IDs).
 - Both CSVs ship in the submission zip but stay out of git.
+
+### Production mode: Elsevier / Scopus
+
+Set `data_source: elsevier` in `config/settings.yaml` to load publication
+metadata and abstracts directly from Elsevier instead of `publications.csv`.
+The roster still comes from `authors.csv` (req 4); only the publication source
+switches. Required `.env` keys are `ELSEVIER_API_KEY` and
+`ELSEVIER_BASE_URL`; `ELSEVIER_INST_TOKEN` is optional and may be needed for
+entitled abstracts off campus. Run on the campus network when possible.
+
+- Scopus Search uses `AU-ID(<scopus_id>)`, `view=COMPLETE`, and 0-based
+  pagination; `view=COMPLETE` normally includes the abstract, so Abstract
+  Retrieval is only a bounded fallback for missing abstracts.
+- Results are cached under `data/elsevier_cache/`:
+  `publications/<EID>.json` is the canonical record, and
+  `authors/<scopus_id>.json` stores that author's EID list. A repeat load hits
+  the cache with **zero API calls**; pass `refresh=True` (or delete the cache
+  directory) to force a refresh.
+- Switching CSV → Elsevier changes publication text even when EIDs match, so
+  the index tracks a corpus content hash and forces a rebuild via
+  `python scripts/build_index.py`. The LLM build cache is also keyed by the
+  data source/corpus fingerprint, so CSV-built teams are never served after
+  the switch.
+- Abstract fallback is capped and disables itself after repeated
+  entitlement/quota failures, so an off-campus run cannot become thousands of
+  failed requests.
+- `data_source: csv` is the submitted default: the instructor can unzip and
+  run without an Elsevier key. The production path is covered by offline
+  fake-transport tests plus a live one-author smoke test. A full-corpus
+  Elsevier run is optional and needs campus-network entitlement plus a large
+  API budget (hundreds of paginated searches); it does not block the submitted
+  CSV mode.
 
 **Cleaning rules applied at load time** (`gt/faculty/`, deterministic — same
 input, same output, every run):
@@ -180,6 +228,16 @@ structure and at least n−2 of the same people; residual variance is endpoint
 keyword selection, never membership logic (req 19). Degraded fallback output
 is never cached.
 
+**Final Stage 7 gate** (shipped CSV corpus + index, opportunity `363268`
+"Unlocking Dataset Value for AI-Enabled Scientific Discovery"): two
+cache-cleared builds produced the same four-role structure and **3/4** people
+overlap (the contract requires ≥ n−2 = 2); the query text drifted only in the
+LLM keyword half, as designed. A third cached build made **0 LLM calls** and
+was bit-identical to the second, rationales included. The same gate also
+verified that an injected fake author/publication is rejected by
+`gt/llm/verify.py`, and that browser refresh/detail failures render as
+user-facing errors (`tests/test_browser.py`).
+
 The chat UI renders each member's role, deterministic score breakdown,
 rationale, and supporting publications. Every publication shows its EID,
 DOI/Scopus link, and expandable verbatim indexed text, so claims are
@@ -193,13 +251,14 @@ main.py                 # Streamlit entrypoint
 config/settings.yaml    # weights, roles, PI-eligible ranks, retrieval/LLM params
 gt/                     # package: state, config
 │   └── grants/         #   grants.gov client, JSON store, orchestration
-│   └── faculty/        #   roster + publications loading, FacultySource seam, scoring
+│   └── faculty/        #   roster + publications loading, FacultySource seam,
+│                       #   Elsevier production source + EID cache, scoring
 │   └── retrieval/      #   chunk index, hybrid search, author MMR, evidence packs
 │   └── llm/            #   ARC client, canonical query, team builder, verification, cache
 app/                    # Streamlit views: browser.py, chat.py (shared session state)
 scripts/                # CLI: refresh_grants.py, build_index.py
 tests/                  # pytest (root conftest.py makes gt/ importable)
-data/                   # CSVs + local artifacts incl. chroma/ (gitignored; ships in zip)
+data/                   # CSVs + grants store + LLM cache in the zip; chroma/ rebuilt locally
 ```
 
 ## Running tests
@@ -210,5 +269,26 @@ pytest -q
 ```
 
 The suite is offline (fake grants transport, fake LLM client, temporary
-directories). `tests/test_chat.py` also drives the Streamlit chat view through
-`streamlit.testing.v1.AppTest`; no live API calls are made.
+directories). `tests/test_chat.py` and `tests/test_browser.py` also drive the
+Streamlit views through `streamlit.testing.v1.AppTest`; no live API calls are
+made.
+
+## Troubleshooting
+
+- **`Missing .env key(s)` on the first team build** — copy `.env.example` to
+  `.env` and fill `VT_ARC_API_KEY`, `VT_ARC_BASE_URL`, and `VT_ARC_MODEL`.
+  The browser view loads without keys; only the LLM build needs them.
+- **First build pauses on “may download the embedding model”** — one-time
+  ~130 MB HuggingFace download. If the machine is offline, pre-populate the HF
+  cache or switch `retrieval.embedding_model` to the ARC `Qwen3-Embedding-4B`
+  endpoint.
+- **Refresh fails** — grants.gov is external; use a network connection or keep
+  the shipped `data/grants/active.json` and skip the refresh. Failed refreshes
+  never modify or archive the local store.
+- **Empty or truncated LLM replies** — raise `llm.max_output_tokens` in
+  `config/settings.yaml`, or use `gpt-oss-120b` (thinking models can spend the
+  budget on hidden reasoning).
+- **`data/chroma/` absent after unzip** — expected; the first build recreates
+  it, or run `python scripts/build_index.py` once.
+- **Faculty corpus missing** — `data/authors.csv` and `data/publications.csv`
+  must be present at the repo root's `data/` directory.

@@ -10,6 +10,12 @@ from types import SimpleNamespace
 from streamlit.testing.v1 import AppTest
 
 import app.chat as chat
+from gt.faculty.elsevier import (
+    ElsevierConfigError,
+    ElsevierQuotaError,
+    ElsevierResponseError,
+    ElsevierUnavailableError,
+)
 from gt.faculty.publications import Publication
 from gt.faculty.roster import Faculty, Roster
 from gt.llm.arc import ArcUnavailableError
@@ -207,3 +213,16 @@ def test_new_solicitation_resets_old_conversation(monkeypatch):
     assert builder.build_calls == 1  # old attempt flag was cleared
     assert not any("old conversation" in m.value for m in at.markdown)
     assert any("Build complete" in m.value for m in at.markdown)
+
+
+def test_elsevier_errors_are_user_facing():
+    cases = [
+        (ElsevierConfigError("missing"), "ELSEVIER_API_KEY"),
+        (ElsevierQuotaError("quota"), "quota/entitlement"),
+        (ElsevierUnavailableError("down"), "could not be reached"),
+        (ElsevierResponseError("bad"), "unexpected response"),
+    ]
+    for exc, expected in cases:
+        message = chat._format_error(exc, "Build")
+        assert expected in message
+        assert "data_source: csv" in message or "data_source" in message

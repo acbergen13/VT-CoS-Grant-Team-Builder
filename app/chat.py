@@ -18,6 +18,12 @@ from __future__ import annotations
 import streamlit as st
 
 from gt.config import load_settings
+from gt.faculty.elsevier import (
+    ElsevierConfigError,
+    ElsevierQuotaError,
+    ElsevierResponseError,
+    ElsevierUnavailableError,
+)
 from gt.llm.arc import ArcConfigError, ArcResponseError, ArcUnavailableError
 from gt.llm.team_builder import BuildResult, TeamBuilder
 from gt.retrieval.pipeline import RetrievalPipeline, build_pipeline
@@ -217,6 +223,29 @@ def _format_error(exc: Exception, action: str) -> str:
         return (
             "The LLM returned no usable text. Retry, or raise "
             f"`llm.max_output_tokens` in config/settings.yaml. ({exc})"
+        )
+    if isinstance(exc, ElsevierConfigError):
+        return (
+            "Production publication data is not configured. Set "
+            "`ELSEVIER_API_KEY` and `ELSEVIER_BASE_URL` in `.env`, or switch "
+            f"`data_source` back to `csv`. ({exc})"
+        )
+    if isinstance(exc, ElsevierQuotaError):
+        return (
+            "Elsevier rejected the request or your quota/entitlement is "
+            "exhausted. Check your key and campus network/inst token, or use "
+            f"`data_source: csv`. ({exc})"
+        )
+    if isinstance(exc, ElsevierUnavailableError):
+        return (
+            "The Elsevier API could not be reached. Check your network and "
+            "try again, or use `data_source: csv`. "
+            f"({exc})"
+        )
+    if isinstance(exc, ElsevierResponseError):
+        return (
+            "Elsevier returned an unexpected response. Retry, or use "
+            f"`data_source: csv` if the problem persists. ({exc})"
         )
     if isinstance(exc, FileNotFoundError):
         return (

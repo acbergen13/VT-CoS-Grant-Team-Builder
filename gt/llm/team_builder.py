@@ -90,6 +90,20 @@ class TeamBuilder:
         self._retrieval_cfg = self._settings["retrieval"]
         self._cache = cache if cache is not None else BuildCache()
         self._cache_enabled = bool(self._llm_cfg.get("build_cache", True))
+        self._corpus_key_value: str | None = None
+
+    def _corpus_key(self) -> str:
+        """Data source + corpus fingerprint for cache keys (Stage 6).
+
+        Without this, a team cached from CSV data could be served after
+        ``data_source: elsevier`` or after the corpus content changed even
+        when the opportunity and model are identical.
+        """
+        if self._corpus_key_value is None:
+            mode = str(self._settings.get("data_source", ""))
+            fingerprint = getattr(self._pipeline, "corpus_hash", "") or ""
+            self._corpus_key_value = f"{mode}:{fingerprint}"
+        return self._corpus_key_value
 
     # ------------------------------------------------------------------ build
 
@@ -100,6 +114,7 @@ class TeamBuilder:
             revision=0,
             anchor=(solicitation.title or "") + (solicitation.synopsis or "")[:200],
             extra=extra_instructions,
+            corpus=self._corpus_key(),
         )
         if self._cache_enabled:
             hit = self._cache.get(cache_key)
@@ -173,6 +188,7 @@ class TeamBuilder:
             revision=team.revision + 1,
             anchor=(team.query or "") + (critique or "")[:200],
             extra="",
+            corpus=self._corpus_key(),
         )
         if self._cache_enabled:
             hit = self._cache.get(cache_key)
@@ -280,6 +296,7 @@ class TeamBuilder:
             solicitation.title or "",
             solicitation.synopsis or "",
             extra=extra_instructions,
+            corpus=self._corpus_key(),
         )
         if self._cache_enabled:
             hit = self._cache.get(key)

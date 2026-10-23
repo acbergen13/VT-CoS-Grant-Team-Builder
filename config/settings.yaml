@@ -69,6 +69,22 @@ grants:
   request_timeout_seconds: 20
   max_retries: 3
 
+elsevier:
+  # Production publication source (data_source: elsevier). Credentials and
+  # the API base URL live in .env (ELSEVIER_API_KEY / ELSEVIER_BASE_URL,
+  # optional ELSEVIER_INST_TOKEN) — never here and never hardcoded.
+  timeout_seconds: 30
+  max_retries: 3
+  page_size: 25              # Scopus Search maximum per request
+  max_pages_per_author: 100  # defensive pagination guard
+  cache_dir: data/elsevier_cache  # EID + author EID-list disk cache
+  # view=COMPLETE usually carries the abstract. Fall back to Abstract
+  # Retrieval only for missing abstracts, cap the attempts, and disable the
+  # fallback after repeated entitlement/quota failures (off-campus safety).
+  abstract_fallback: true
+  abstract_fallback_limit: 25
+  abstract_fallback_disable_after: 3
+
 retrieval:
   # Local embeddings so the app runs without extra endpoint setup (flag D10).
   # bge-small-en-v1.5: 512-token context (median abstract is 156 words, so

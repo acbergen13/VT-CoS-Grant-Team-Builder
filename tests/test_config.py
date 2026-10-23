@@ -42,3 +42,12 @@ def test_pi_eligibility_and_mmr_bounds():
     assert settings["team"]["pi_eligible_ranks"], "PI-eligible ranks must not be empty"
     assert 0.0 < settings["retrieval"]["mmr_lambda"] < 1.0
     assert 0 < load_settings()["llm"]["temperature"] <= 0.2
+
+
+def test_elsevier_production_defaults_keep_csv_shipped():
+    settings = load_settings()
+    assert settings["data_source"] == "csv"  # instructor runs without a key
+    elsevier = settings["elsevier"]
+    assert elsevier["page_size"] == 25
+    assert elsevier["abstract_fallback"] is True
+    assert elsevier["abstract_fallback_limit"] < 100  # bounded off-campus

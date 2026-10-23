@@ -166,6 +166,21 @@ def test_index_build_is_idempotent_and_prunes_stale(tmp_path):
     assert "E5" not in index.indexed_ids()
 
 
+def test_index_rebuilds_when_eids_match_but_text_changes(tmp_path):
+    index = PublicationIndex(tmp_path / "chroma")
+    original = build_chunks(PUBS)
+    index.build(original, FakeEmbedder())
+    assert index.needs_build(original) is False
+
+    changed_pubs = [pub("E1", ["1"], "Completely different title")] + PUBS[1:]
+    changed = build_chunks(changed_pubs)
+    assert {c.id for c in changed} == {c.id for c in original}
+    assert index.needs_build(changed) is True  # CSV -> Elsevier-style change
+
+    index.build(changed, FakeEmbedder())
+    assert index.needs_build(changed) is False
+
+
 def test_index_query_returns_nearest_ids(tmp_path):
     index = PublicationIndex(tmp_path / "chroma")
     index.build(build_chunks(PUBS), FakeEmbedder())

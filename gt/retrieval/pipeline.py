@@ -27,6 +27,7 @@ from gt.retrieval.index import (
     PublicationIndex,
     SentenceTransformerEmbedder,
     build_chunks,
+    corpus_fingerprint,
 )
 from gt.retrieval.rerank import build_author_candidates, mmr_select
 from gt.retrieval.search import HybridSearcher
@@ -80,6 +81,11 @@ class RetrievalPipeline:
     @property
     def chunks(self) -> list[Chunk]:
         return self._chunks
+
+    @property
+    def corpus_hash(self) -> str:
+        """Content fingerprint used in LLM cache keys (Stage 6)."""
+        return corpus_fingerprint(self._chunks)
 
     def retrieve(self, query: str) -> RetrievalResult:
         """One retrieval pass. Deterministic: same corpus + same query ->

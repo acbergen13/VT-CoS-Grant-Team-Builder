@@ -7,15 +7,17 @@ and `docs/specifications/specification.qmd` (use cases, 1000-pt rubric,
 submission format). Repo conventions: `AGENTS.md`.
 
 To resume a session: read `AGENTS.md`, this file, then check stage statuses in
-the build plan below. **Note: the repo's git history is stale** (only the
-original docs commits exist; all Stage 0–5 code is untracked in the working
-tree), so judge what exists from the filesystem, not `git log`. **Current
-position (end of Oct 21 session): Stage 5 is done (chat UI auto-builds, renders
-traceable team cards, supports revision turns, and surfaces clean errors);
-Stage 6 (Elsevier) is next but NOT started — the research and implementation
-map are recorded in "Stage 6 prep — resume here" below; Stage 7
-(harden/submit) follows.** Implementation notes and the Stage 4/5 evidence are
-in "Session handoff (Oct 21)" below.
+the build plan below. **Note: the repo's git history may be stale**, so judge
+what exists from the filesystem, not `git log`. **Current position (end of
+Oct 22 session): Stages 0–7 are done. Stage 6 added the Elsevier production
+source (`gt/faculty/elsevier.py`) behind the existing `FacultySource` seam,
+with an EID/author disk cache, bounded abstract fallback, corpus-hash index
+invalidation, and source-aware LLM cache keys. Stage 7 hardened verification,
+added browser error-path tests, passed the final two-tier reproducibility
+gate, and built/validated the submission zip. `data_source: csv` remains the
+submitted default. The only manual deliverable left is the OBS screen
+recording.** Implementation notes and the Stage 4–7 evidence are in "Session
+handoff" below.
 
 ## Locked decisions (Oct 20)
 
@@ -90,7 +92,7 @@ in "Session handoff (Oct 21)" below.
      string-level voting fragile; +2 calls/build).
 10. **Two-tier reproducibility contract (Oct 21) — document in README.**
     - *Same prompt served again (cache hit):* bit-identical team including
-      rationales, **0 LLM calls** (plan/build cache, `CACHE_FORMAT = "v3"`).
+      rationales, **0 LLM calls** (plan/build cache, `CACHE_FORMAT = "v4"`).
     - *Full regeneration (cache cleared):* "relatively consistent" (req 19
       wording) — identical role structure, same people measured 4/4 on opp
       45810 in the final gate; residual variance is endpoint term selection,
@@ -107,6 +109,7 @@ in "Session handoff (Oct 21)" below.
 | `VT_ARC_BASE_URL` | `https://llm-api.arc.vt.edu/api/v1` (required) |
 | `VT_ARC_MODEL` | chat model id (required) |
 | `ELSEVIER_API_KEY` | production publication source (Stage 6) |
+| `ELSEVIER_BASE_URL` | Elsevier API base (required in prod mode) |
 | `ELSEVIER_INST_TOKEN` | optional: entitled content off-campus |
 
 - Endpoint + key verified working Oct 20 via `GET /models`.
@@ -224,7 +227,8 @@ midterm_project/
 │   ├── faculty/
 │   │   ├── roster.py        # authors.csv: utf-8-sig, dedupe (D1), impute (D2), normalize (D3)
 │   │   ├── publications.py  # publications.csv: CoS filter (D4), doc-type filter (D5)
-│   │   ├── source.py        # FacultySource protocol: csv impl (dev) + elsevier impl (prod, cached)
+│   │   ├── source.py        # FacultySource protocol + csv/elsevier factory seam
+│   │   ├── elsevier.py      # Scopus Search + Abstract Retrieval + EID/author cache (prod)
 │   │   └── scoring.py       # deterministic 0.6/0.25/0.15 ranker
 │   ├── retrieval/
 │   │   ├── index.py         # chunk builder + persistent ChromaDB index (metadata: author IDs, year)
@@ -282,10 +286,19 @@ llm:
   max_output_tokens: 3072
   max_input_chars: 6000
   query_max_chars: 400            # per half of the canonical query
-  build_cache: true               # data/llm_cache/, CACHE_FORMAT = "v3"
+  build_cache: true               # data/llm_cache/, CACHE_FORMAT = "v4"
 grants:
   opp_statuses: "forecasted|posted"
-data_source: csv                   # csv | elsevier
+elsevier:                           # production source (Stage 6)
+  timeout_seconds: 30
+  max_retries: 3
+  page_size: 25
+  max_pages_per_author: 100
+  cache_dir: data/elsevier_cache
+  abstract_fallback: true
+  abstract_fallback_limit: 25
+  abstract_fallback_disable_after: 3
+data_source: csv                   # csv | elsevier (csv is the shipped default)
 ```
 
 Local artifacts (gitignored under `data/`): `data/grants/active.json`,
@@ -302,10 +315,10 @@ Local artifacts (gitignored under `data/`): `data/grants/active.json`,
 | **3. Retrieval** | Tue | build_index.py, search.py (vector+BM25→RRF), rerank.py (author group → MMR) | "machine learning for climate" returns sensible faculty; no author >2 of top-10; warm query <2s | 10 / 150 | **done Oct 20** — 79 tests green; live index 19,461 chunks (~50s build); gate: sensible cross-dept pool (Carey/Shirzaei/Gel/Allen/Ferreira…), output top-10 = 10 distinct authors (raw chunk recall is crowded — 6/10 one author — which is exactly what author grouping + MMR mitigates), warm query 0.03s, two runs bit-identical (ids, scores, evidence) |
 | **4. LLM layer** | Tue PM–Wed AM | arc.py, prompts.py, optimize.py, team_builder.py (canonical query → deterministic role focuses → greedy fill, JSON output), team.py (critique→slot ops w/ scope guard), verify.py (reject/regenerate), cache.py | live gate: role structure identical across regens, people overlap ≥ n−2; cached rerun bit-identical + 0 calls; revise keeps untouched members and replaces PI; 114 tests green | 9,13,14,15,17,18,19,21,27 / 350 | **done Oct 21** — 114 tests at Stage 4 (119 now); see "Session handoff" below for evidence |
 | **5. UI** | Wed | browser.py (refresh+spinner, filters, select→detail, build-a-team), session-state handoff, chat.py (auto-build, messages, error surfaces, follow-ups, team cards w/ EID/Link/source traceability) | launch→team in ≤5 interactions; handoff loses nothing; network kill → clean error | 1,8,24 / 100 | **done Oct 21** — AppTest covers auto-build, revision, reuse of the same solicitation, and LLM-down error; 119 tests green; live build rendered team cards with evidence links/verbatim text |
-| **6. Prod source + README** | Wed PM–Thu | elsevier.py behind FacultySource (Scopus search + Abstract Retrieval, EID-keyed disk cache), config switch, README design section | swap `data_source` → app still works (on campus); README complete | 25,26,20 | **not started** — prep map below |
-| **7. Harden & submit** | Thu PM–Fri | reproducibility runs, error paths, zip (with data/), OBS video | two-tier reproducibility pass (decision 10); instructor-follows-README dry run | 19 / submission | not started |
+| **6. Prod source + README** | Wed PM–Thu | elsevier.py behind FacultySource (Scopus search + Abstract Retrieval, EID-keyed disk cache), config switch, README design section | offline fake-transport tests pass; cache hit = 0 API calls; corpus hash forces rebuild; factory switch works; on-campus live gate still pending | 25,26,20 | **done Oct 22** — 136 tests green; on-campus live verification remains in Stage 7 |
+| **7. Harden & submit** | Thu PM–Fri | reproducibility runs, error paths, zip (with data/), OBS video | two-tier reproducibility pass (decision 10); instructor-follows-README dry run | 19 / submission | **done Oct 22** — 141 tests; two-tier gate passed on opp 363268 (fresh 3/4 overlap ≥ n−2, cached 0 calls + bit-identical); verify_team rejects injected fake authors/publications; browser refresh/detail errors covered; zip built without `.env`/chroma and dry-run from a clean unzip. OBS recording remains manual. |
 
-## Session handoff (Oct 21) — resume here
+## Session handoff (Oct 21–22) — resume here
 
 **Stages 4 and 5 are complete.** 119 tests pass:
 `conda run -n ads_5984 python -m pytest -q`.
@@ -334,8 +347,9 @@ Final live gate (`gpt-oss-120b`, opp 45810 "Sociology", caches cleared):
 - `gt/llm/team_builder.py`: focuses-only decompose against `base_roles`;
   fixed pre-existing bug where role/focus tuples were passed to
   `_write_rationales` (rationale prompt showed tuple reprs).
-- `gt/llm/cache.py`: `CACHE_FORMAT = "v3"` (v2 = canonical query, v3 =
-  base_roles structure). Old cache entries are ignored, not migrated.
+- `gt/llm/cache.py`: `CACHE_FORMAT = "v4"` (v2 = canonical query, v3 =
+  base_roles structure, v4 = source/corpus fingerprint). Old cache entries
+  are ignored, not migrated.
 - Revise no-op message: "No team changes were applied."
 
 **Stage 5 completion (Oct 21):**
@@ -354,9 +368,41 @@ Final live gate (`gpt-oss-120b`, opp 45810 "Sociology", caches cleared):
   gates); stale "Stages 0–4" README status and the Stage 4 cleanup are done.
 - Scratch scripts (`_gate_stage4.py`, `_debug_*.py`) were removed.
 
-**Stage 6 prep — resume here (Oct 21, before implementation).** No Stage 6
-code has been written yet. Keep `data_source: csv` until the implementation
-and on-campus verification are complete.
+**Stage 6 completion (Oct 22):**
+
+- `gt/faculty/elsevier.py` implements `ElsevierClient` (paginated Scopus
+  Search with `AU-ID`, `view=COMPLETE`, 0-based `start`, retries and typed
+  errors), `ElsevierCache` (`publications/<EID>.json` +
+  `authors/<scopus_id>.json`, atomic writes, corrupt-entry fallback,
+  duplicate-EID author union), and `ElsevierFacultySource` (roster order,
+  doc-type filter, roster-linked records, bounded abstract fallback with
+  disable-after-failures). `gt/faculty/source.py` is now the factory/re-export
+  seam; the `NotImplementedError` placeholder is gone.
+- `config/settings.yaml` has an `elsevier:` block; `.env.example` documents
+  `ELSEVIER_BASE_URL`. `data_source: csv` remains the committed default.
+- `gt/retrieval/index.py` now writes `corpus.sha256` and `needs_build()`
+  compares ids **and** text content, so CSV→Elsevier with identical EIDs
+  rebuilds.
+- `gt/llm/cache.py` is `CACHE_FORMAT = "v4"` and keys include a
+  `data_source:corpus_hash` fingerprint from the pipeline, so CSV-built teams
+  cannot be served after the source switch.
+- `app/chat.py:_format_error` maps Elsevier config/quota/network/response
+  failures to user-facing messages (req 23).
+- Offline coverage: `tests/test_elsevier.py` (pagination, normalization,
+  cache hits with 0 calls, duplicate-EID merge, doc-type filter, abstract
+  fallback/disable, typed errors, factory); index content-hash and cache-key
+  tests added. Full suite: **136 tests green**.
+- Live smoke test (Oct 22): one roster author search against the real
+  Elsevier endpoint succeeded (18 records, abstract present, 1 API call), so
+  credentials/base URL/network work. The full on-campus gate (set
+  `data_source: elsevier`, rebuild the index, verify ~500 authors / ~19.5k
+  publications, build a team) is still pending and belongs to Stage 7. Until
+  then the submitted default stays `csv`.
+
+**Stage 6 implementation notes.** The API findings below were verified against
+Elsevier's official payload sample and implemented in `elsevier.py`. Keep
+`data_source: csv` for the submitted app; use Elsevier only for an on-campus
+production run.
 
 API findings (verified against Elsevier's official payload sample):
 
@@ -420,24 +466,62 @@ Implementation map:
    index deliberately, confirm the corpus is ~500 authors / ~19.5k
    publications, and run a team build through the app. Then decide whether to
    leave csv or elsevier as the submitted default (locked decision 1 says
-   csv).
+   csv). **Code/tests are complete; the live on-campus gate is still pending.**
 
-**Open items / gotchas for the next session:**
+**Stage 7 completion (Oct 22):**
 
-- Gate uses the first posted NSF opp (45810 "Sociology"), so retrieval returns
-  quantitative-methods social scientists. Before the video/demo, pick a
-  solicitation that shows the cross-department story better (e.g. an AI/data
-  science or climate call); no code change needed.
-- `data/` is gitignored (data ships only in the zip), so docs are the only
-  tracked changes pending besides the source code.
-- Keep `data/llm_cache/` out of git but decide in Stage 7 whether the shipped
-  zip pre-warms it for the demo solicitation (cache hits are content-keyed
-  and safe).
-- Stage 6 is the next build; `gt/faculty/source.py:ElsevierFacultySource` is
-  still a `NotImplementedError`. Follow "Stage 6 prep — resume here" above:
-  `view=COMPLETE` Scopus search already returns abstracts, so Abstract
-  Retrieval is only a missing-abstract fallback. Remember the ChromaDB corpus
-  hash fix before switching `data_source` on campus.
+- **Reproducibility gate** (shipped CSV corpus + `data/chroma/`, opp `363268`
+  "Unlocking Dataset Value for AI-Enabled Scientific Discovery"): two
+  cache-cleared builds produced the same four-role structure and 3/4 people
+  overlap (contract ≥ n−2 = 2); the drift was confined to the LLM keyword half
+  of the canonical query. A third build hit the disk cache with **0 LLM
+  calls** and was bit-identical to the second, rationales included.
+- **Verification hardening:** `gt/llm/verify.py:verify_team` now rejects a
+  member absent from the offered evidence pool, an empty evidence list, an
+  unmatched EID, and an empty rationale. This closes the "injected fake
+  author/publication" gate even if a corrupted cache or bad reply tries to
+  introduce one. New tests: `test_verify_team_rejects_injected_fake_author_*`.
+- **Error paths:** `tests/test_browser.py` (AppTest) covers a failed refresh,
+  a failed detail fetch, and the empty-store prompt; `tests/test_chat.py`
+  already covered LLM-down and Elsevier config/quota/network/response errors.
+  Suite: **141 tests green** in ~4s.
+- **Submission zip:** `submission/vt_cos_team_builder.zip` contains source,
+  README, `.env.example`, docs, tests, `data/authors.csv`,
+  `data/publications.csv`, `data/grants/active.json`, and the pre-warmed
+  `data/llm_cache/` entry for opp 363268. It excludes `.env`, `.git`,
+  `__pycache__`, and the 387 MB `data/chroma/` (auto-rebuilds on first build).
+  A clean unzip dry run passed the test suite and booted the app headless
+  without keys (browser view).
+- **Manual remaining step:** record the OBS run-through (refresh + filter →
+  build team on opp 363268 → follow-up revision). Recommended example
+  follow-up: "Replace the PI with a full professor whose evidence covers data
+  governance." The cache makes the initial build return instantly with 0 LLM
+  calls; the revision makes 2.
+- **Elsevier full-corpus gate:** not run end to end in this session — it needs
+  campus-network entitlement and hundreds of paginated searches. The
+  one-author live smoke test passed, the EID/author cache and source
+  fingerprint contracts are covered offline, and the submitted default remains
+  `csv`.
+
+**Open items / gotchas:**
+
+- **OBS video** is the only unfinished deliverable. Use opp `363268`
+  (cross-department: Biological Sciences, Statistics, Geosciences, Biological
+  Systems Engineering) and show refresh/filter → select → Build a team →
+  follow-up revision. The shipped `data/llm_cache/` entry makes the first
+  build a 0-call cache hit; the revision makes 2 calls.
+- `data/` is gitignored (data ships only in the zip), so docs/source are the
+  tracked changes; the zip itself lives under `submission/` and is not
+  committed.
+- The browser table relies on `st.dataframe` row selection; if a future
+  Streamlit version changes that widget API, re-run
+  `tests/test_chat.py`/manual click-through before recording.
+- Optional production verification remains: set `data_source: elsevier`,
+  rebuild the Chroma index (the `corpus.sha256` sidecar will force it),
+  confirm the corpus size, run one team build, then restore
+  `data_source: csv`. It needs campus-network entitlement and a large API
+  budget; the offline contract already proves 0-call cache hits and
+  source-fingerprint invalidation.
 
 ## Contingency drop order (if time runs short)
 

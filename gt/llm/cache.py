@@ -22,31 +22,45 @@ from gt.config import REPO_ROOT
 DEFAULT_CACHE_DIR = REPO_ROOT / "data" / "llm_cache"
 
 # Bumped whenever the serialized plan/build format changes meaning (v2:
-# canonical-query rework; v3: deterministic base_roles structure — Oct 21):
-# old-format entries must never be read back under an unchanged key.
-CACHE_FORMAT = "v3"
+# canonical-query rework; v3: deterministic base_roles structure; v4:
+# corpus/source fingerprint in the key — Oct 22 Stage 6): old-format entries
+# must never be read back under an unchanged key.
+CACHE_FORMAT = "v4"
 
 
 def plan_cache_key(
-    opp_id: str, model: str, title: str, synopsis: str, extra: str = ""
+    opp_id: str,
+    model: str,
+    title: str,
+    synopsis: str,
+    extra: str = "",
+    corpus: str = "",
 ) -> str:
     """Stable key for one solicitation's build plan under one model.
-    `extra` covers user build instructions that shape the role plan."""
+    `extra` covers user build instructions that shape the role plan;
+    `corpus` is the data-source/corpus fingerprint so CSV-built plans are
+    never served after switching to Elsevier (or after a corpus rebuild)."""
     content = (
         f"{CACHE_FORMAT}|{opp_id}|{model}|{title}|{(synopsis or '')[:500]}"
-        f"|{extra.strip()[:200]}"
+        f"|{extra.strip()[:200]}|{corpus}"
     )
     return hashlib.sha1(content.encode("utf-8")).hexdigest()[:24]
 
 
 def build_cache_key(
-    opp_id: str, model: str, revision: int, anchor: str, extra: str = ""
+    opp_id: str,
+    model: str,
+    revision: int,
+    anchor: str,
+    extra: str = "",
+    corpus: str = "",
 ) -> str:
     """Stable key for one finished build (a revision of a team). `anchor` is
-    the query or critique excerpt the build was produced from."""
+    the query or critique excerpt the build was produced from; `corpus`
+    pins the data source/corpus content."""
     content = (
         f"{CACHE_FORMAT}|{opp_id}|{model}|{revision}|{anchor[:500]}"
-        f"|{extra.strip()[:200]}"
+        f"|{extra.strip()[:200]}|{corpus}"
     )
     return hashlib.sha1(content.encode("utf-8")).hexdigest()[:24]
 

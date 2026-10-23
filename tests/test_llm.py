@@ -340,6 +340,49 @@ def test_verify_rationale_accepts_valid_entry():
     assert check.ok, check.reasons
 
 
+def test_verify_team_rejects_injected_fake_author_and_publication():
+    chunks = build_chunks(PUBS)
+    by_eid = {c.id: c for c in chunks}
+    evidence = {"1": build_evidence([(by_eid["E1"], 1.0)])}
+    fake = Team(
+        solicitation_opp_id="42",
+        members=[
+            TeamMember(
+                scopus_id="999",
+                name="Fake Person",
+                role="Principal Investigator",
+                evidence_eids=["E999"],
+                rationale="Invented credentials.",
+            )
+        ],
+    )
+    check = verify_team(fake, evidence, llm_settings())
+    assert not check.ok
+    assert any("not in the verified candidate pool" in r for r in check.reasons)
+
+
+def test_verify_team_rejects_unmatched_publication_and_empty_rationale():
+    chunks = build_chunks(PUBS)
+    by_eid = {c.id: c for c in chunks}
+    evidence = {"1": build_evidence([(by_eid["E1"], 1.0)])}
+    team = Team(
+        solicitation_opp_id="42",
+        members=[
+            TeamMember(
+                scopus_id="1",
+                name="Climate Person",
+                role="Principal Investigator",
+                evidence_eids=["E999"],
+                rationale="",
+            )
+        ],
+    )
+    check = verify_team(team, evidence, llm_settings())
+    assert not check.ok
+    assert any("unmatched evidence EIDs" in r for r in check.reasons)
+    assert any("empty rationale" in r for r in check.reasons)
+
+
 # ------------------------------------------------------------ team builder
 
 
@@ -519,8 +562,10 @@ def test_cache_keys_are_stable_and_sensitive():
     k3 = plan_cache_key("42", "other-model", "T", "S", extra="")
     k4 = build_cache_key("42", "m", 0, "anchor", extra="")
     k5 = build_cache_key("42", "m", 1, "anchor", extra="")
+    k6 = plan_cache_key("42", "m", "T", "S", extra="", corpus="elsevier:abc")
     assert k1 == k2 and k1 != k3  # model is part of the key
     assert k4 != k5  # revision is part of the key
+    assert k1 != k6  # data source/corpus fingerprint is part of the key
 
 
 def test_cached_build_skips_llm_entirely(tmp_path):

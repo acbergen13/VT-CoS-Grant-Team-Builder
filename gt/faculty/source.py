@@ -1,10 +1,10 @@
 """FacultySource: one retrieval interface for dev (CSV) and prod (Elsevier).
 
-Req 5 / req 26: development reads the local CSVs; the production version must
-retrieve publication data directly from the Elsevier API behind the SAME
-retrieval interface, with local caching to limit repeat calls. This protocol
-is that seam — Stage 6 adds ElsevierFacultySource (Scopus search + Abstract
-Retrieval + an EID-keyed disk cache) without touching any caller.
+Req 5 / req 26: development reads the local CSVs; the production version
+retrieves publication data directly from the Elsevier API behind the SAME
+retrieval interface, with local caching to limit repeat calls. This module is
+the seam/factory; the production implementation lives in
+``gt.faculty.elsevier`` and is re-exported here for callers and tests.
 
 Callers should always go through get_faculty_source() so the data_source
 switch in settings.yaml controls which implementation runs.
@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from gt.config import load_settings
+from gt.faculty.elsevier import ElsevierFacultySource
 from gt.faculty.publications import PUBLICATIONS_CSV, Publication, load_publications
 from gt.faculty.roster import AUTHORS_CSV, Roster, load_roster
 
@@ -54,18 +55,6 @@ class CsvFacultySource:
         return load_publications(roster, self._publications_path, self._settings)
 
 
-class ElsevierFacultySource:
-    """Production source (Stage 6): Scopus Search + Abstract Retrieval with an
-    EID-keyed disk cache. Placeholder until then — failing loudly here is
-    better than silently falling back to CSVs in "production" mode."""
-
-    def __init__(self, *_args, **_kwargs) -> None:
-        raise NotImplementedError(
-            "ElsevierFacultySource lands in Stage 6 (see plan.md); "
-            "set data_source: csv in config/settings.yaml for now."
-        )
-
-
 def get_faculty_source(settings: dict | None = None) -> FacultySource:
     """Factory keyed on settings.yaml data_source (csv | elsevier)."""
     cfg = settings or load_settings()
@@ -73,7 +62,7 @@ def get_faculty_source(settings: dict | None = None) -> FacultySource:
     if mode == "csv":
         return CsvFacultySource(settings=cfg)
     if mode == "elsevier":
-        return ElsevierFacultySource()
+        return ElsevierFacultySource(settings=cfg)
     raise ValueError(
         f"unknown data_source {mode!r} in config/settings.yaml (expected csv|elsevier)"
     )
