@@ -32,6 +32,8 @@ Mid-term project for VT ADS 5984. Binding requirements and architecture:
 
 ## Quick start
 
+### Option A — course conda env
+
 ```bash
 # course conda env — all dependencies already installed
 conda activate ads_5984
@@ -46,6 +48,21 @@ python scripts/build_index.py
 streamlit run main.py
 ```
 
+### Option B — plain Python (no conda)
+
+`requirements.txt` pins the exact versions verified in `ads_5984`, so the app
+can be installed in any Python 3.12 virtual environment:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+cp .env.example .env   # then fill in values
+streamlit run main.py  # first build creates data/chroma/ if missing
+```
+
 > First index build downloads a small local embedding model
 > (`BAAI/bge-small-en-v1.5`, ~130 MB) — internet required once.
 
@@ -57,7 +74,8 @@ existing team, and cached builds return with zero LLM calls.
 ### What ships in the submission zip
 
 - All source (`main.py`, `app/`, `gt/`, `scripts/`, `tests/`, `config/`,
-  `.streamlit/`), this README, `.env.example`, and the design docs.
+  `.streamlit/`), this README, `requirements.txt`, `.env.example`, and the
+  design docs.
 - `data/authors.csv`, `data/publications.csv`, the harvested
   `data/grants/active.json`, and pre-warmed `data/llm_cache/` entries
   (including the demo solicitation `363268`, NSF AI Datasets).
@@ -267,7 +285,7 @@ data/                   # CSVs + grants store + LLM cache in the zip; chroma/ re
 ## Running tests
 
 ```bash
-conda activate ads_5984
+conda activate ads_5984      # or: source .venv/bin/activate
 pytest -q
 ```
 

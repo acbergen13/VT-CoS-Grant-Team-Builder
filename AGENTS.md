@@ -30,8 +30,9 @@ Python, Streamlit, ChromaDB, VT ARC LLM (OpenAI-compatible client).
   Python 3.12 with streamlit, chromadb, langchain/langchain-openai, openai,
   neo4j, pandas, sentence-transformers, python-dotenv, scikit-learn, and
   pytest already installed. Don't create separate venvs; install any new
-  dependencies into this env. There is no `requirements.txt` or package
-  install — run from the repo root so `gt`/`app` imports resolve.
+  dependencies into this env. `requirements.txt` pins the direct runtime/test
+  dependencies from this env for use in a plain Python 3.12 venv. Run from the
+  repo root so `gt`/`app` imports resolve.
 
 ## Non-negotiable constraints (easy to violate)
 - Faculty ranking is deterministic: score = 0.6×semantic-similarity +
